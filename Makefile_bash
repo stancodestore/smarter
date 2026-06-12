@@ -1,16 +1,20 @@
-SHELL := pwsh.exe
-.SHELLFLAGS := -NoProfile -Command
+SHELL := /bin/bash
+export PATH := /usr/local/bin:$(PATH)
 export
 
-PYTHON := python.exe
-ACTIVATE_VENV := .\\.venv\\Scripts\\Activate.ps1
+ifeq ($(OS),Windows_NT)
+    PYTHON := python.exe
+    ACTIVATE_VENV := venv/Scripts/activate
+else
+    PYTHON := python3.13
+    ACTIVATE_VENV := source venv/bin/activate
+endif
 PIP := $(PYTHON) -m pip
 
-# Auto-copy .env.example to .env if .env does not exist
 -include .env
 
 .env: .env.example
-	@if (!(Test-Path ".env")) { Copy-Item ".env.example" ".env" }
+	@test -f .env || cp .env.example .env
 
 .PHONY: init activate build run test clean tear-down lint analyze coverage pre-commit-init pre-commit-run release docker-init docker-build docker-run docker-test python-init python-lint python-clean python-requirements keen-init keen-build keen-server helm change-log help
 
@@ -26,10 +30,10 @@ init:
 	@echo "build the Docker containers, initialize the MySQL database, and create example users,"
 	@echo "prompts and AI resources. This may take up to 20 minutes..."
 	@echo "==============================================================================="
-	make check-python							# verify Python is installed
+	make check-python							# verify Python 3.13 is installed
 	make docker-check							# verify Docker is installed and running
 	make python-init							# create/replace Python virtual environment and install dependencies
-	.\\.venv\\Scripts\\python.exe smarter/manage.py collectstatic --noinput	# collect static files
+	./venv/bin/python smarter/manage.py collectstatic --noinput	# collect static files for the Django admin interface and other components
 	make build			    					# build the Smarter Docker container
 	make docker-init							# initialize MySQL and create the smarter database
 	make pre-commit-init						# install and configure pre-commit
@@ -38,7 +42,7 @@ init:
 	@echo "==============================================================================="
 	@echo "Initialization complete!"
 	@echo ""
-	@echo "Run '.\\.venv\\Scripts\\Activate.ps1' to activate the Python virtual environment."
+	@echo "Run 'source venv/bin/activate' to activate the Python virtual environment."
 	@echo "Run 'make run' to start the application."
 	@echo "    'make help' to see all available commands."
 	@echo ""
@@ -53,7 +57,7 @@ init:
 	@echo "==============================================================================="
 
 activate:
-	.\\.venv\\Scripts\\Activate.ps1
+	./scripts/activate.sh
 
 # complete Docker build. Performs all 13 steps of the build process regardless of current state.
 # takes around 4 minutes to complete
@@ -121,7 +125,7 @@ release:
 	@echo "==============================================================================="
 	@echo "Forcing a new semantic release on GitHub by creating an empty commit and pushing to the repository ..."
 	@echo "==============================================================================="
-	git commit -m "fix: force a new release" --allow-empty; git push
+	git commit -m "fix: force a new release" --allow-empty && git push
 
 
 # ---------------------------------------------------------
@@ -133,37 +137,44 @@ docker-check:
 	@echo "Verifying that Docker is installed and running ..."
 	@echo "==============================================================================="
 	@echo ""
-	@docker ps > $$null 2>&1; if ($$LASTEXITCODE -ne 0) { Write-Error "This project requires Docker but it's not running. Aborting."; exit 1 }
+	@docker ps >/dev/null 2>&1 || { echo >&2 "This project requires Docker but it's not running.  Aborting."; exit 1; }
 
 docker-init:
 	@echo ""
 	@echo "==============================================================================="
 	@echo "Initializing Docker environment, including MySQL database and Smarter application setup. This may take a few minutes..."
 	@echo "==============================================================================="
-	make docker-check
-	docker-compose up -d
-	docker exec smarter-mysql bash -c "sleep 20; until echo '\q' | mysql -u smarter -psmarter; do echo 'Waiting for MySQL to be ready...'; sleep 10; done"
-	docker exec smarter-mysql mysql -u smarter -psmarter -e 'DROP DATABASE IF EXISTS smarter; CREATE DATABASE smarter;'
-	docker exec smarter-app bash -c "python manage.py makemigrations && python manage.py migrate && python manage.py initialize_platform && python manage.py add_plugin_examples && python manage.py create_stackademy && python manage.py deploy_builtin_chatbots && python manage.py deploy_example_chatbot"
+	make docker-check && \
+	docker-compose up -d && \
+	docker exec smarter-mysql bash -c "sleep 20; until echo '\q' | mysql -u smarter -psmarter; do echo 'Waiting for MySQL to be ready...'; sleep 10; done" && \
+	docker exec smarter-mysql mysql -u smarter -psmarter -e 'DROP DATABASE IF EXISTS smarter; CREATE DATABASE smarter;' && \
+	docker exec smarter-app bash -c "\
+		python manage.py makemigrations && python manage.py migrate && \
+		python manage.py initialize_platform && \
+		python manage.py add_plugin_examples && \
+		python manage.py create_stackademy && \
+		python manage.py deploy_builtin_chatbots && \
+		python manage.py deploy_example_chatbot" && \
 	docker exec smarter-mysql mysql -u smarter -psmarter -e 'UPDATE smarter.chatbot_chatbot SET deployed = 0;'
 	@echo "Docker and Smarter are initialized."
 	docker ps
 
+
 docker-shell:
-	make docker-check
+	make docker-check && \
 	docker exec -it smarter-app /bin/bash
 
 docker-build:
-	make docker-check
+	make docker-check && \
 	docker-compose build
 	docker image prune -f
 
 docker-run:
-	make docker-check
+	make docker-check && \
 	docker compose up
 
 docker-test:
-	make docker-check
+	make docker-check && \
 	docker exec smarter-app bash -c "python manage.py test smarter"
 
 docker-prune:
@@ -172,16 +183,16 @@ docker-prune:
 	@echo "Pruning Docker images, containers, volumes, and networks. "
 	@echo "This will free up drive space by removing all unused Docker objects..."
 	@echo "==============================================================================="
-	make docker-check
-	docker-compose down
-	docker builder prune -a -f
+	make docker-check && \
+	docker-compose down && \
+	docker builder prune -a -f && \
 	docker image prune -a -f
-	if (Test-Path "./mysql-data") { Remove-Item -Recurse -Force "./mysql-data" }
-	Get-ChildItem -Path "./" -Recurse -Filter "celerybeat-schedule" -File | Remove-Item -Force
-	docker system prune -a --volumes -f
-	docker volume prune -f
-	docker network prune -f
-	$$images = docker images -q; if ($$images) { docker rmi $$images -f } else { Write-Host "No images to remove." }
+	rm -rf ./mysql-data && \
+	find ./ -name celerybeat-schedule -type f -exec rm -f {} + && \
+	docker system prune -a --volumes && \
+	docker volume prune -f && \
+	docker network prune -f && \
+	images=$$(docker images -q) && [ -n "$$images" ] && docker rmi $$images -f || @echo "No images to remove"
 
 # ---------------------------------------------------------
 # Python
@@ -192,17 +203,19 @@ check-python:
 	@echo "Verifying that Python $(PYTHON) is installed ..."
 	@echo "==============================================================================="
 	@echo ""
-	@if (-not (Get-Command $(PYTHON) -ErrorAction SilentlyContinue)) { Write-Error "This project requires $(PYTHON) but it's not installed. Aborting."; exit 1 }
+	@command -v $(PYTHON) >/dev/null 2>&1 || { echo >&2 "This project requires $(PYTHON) but it's not installed.  Aborting."; exit 1; }
 
 python-init:
 	@echo "==============================================================================="
 	@echo "Initializing Python virtual environment and installing dependencies. This may take a few minutes..."
 	@echo "==============================================================================="
-	if (-not (Test-Path ".pypi_cache")) { New-Item -ItemType Directory -Path ".pypi_cache" | Out-Null }
+	mkdir -p .pypi_cache && \
 	make check-python
-	npm install
-	if ((-not (Test-Path ".\\.venv\\Scripts\\python.exe")) -or (-not (Test-Path ".\\.venv\\pyvenv.cfg"))) { if (Test-Path ".venv") { try { Remove-Item -Recurse -Force ".venv" -ErrorAction Stop } catch { Write-Warning "Unable to fully remove stale '.venv'. Close programs using it and retry make init."; exit 1 } }; $(PYTHON) -m venv .venv }
-	$$env:PIP_CACHE_DIR = ".pypi_cache"; .\\.venv\\Scripts\\python.exe -m pip install -r smarter/requirements/local.txt
+	make python-clean && \
+	npm install && \
+	$(PYTHON) -m venv venv && \
+	$(ACTIVATE_VENV) && \
+	PIP_CACHE_DIR=.pypi_cache $(PIP) install -r smarter/requirements/local.txt
 
 python-lint:
 	@echo ""
@@ -220,9 +233,8 @@ python-clean:
 	@echo "Cleaning Python virtual environment and __pycache__ directories ..."
 	@echo "==============================================================================="
 	@echo ""
-	if (Test-Path ".venv") { try { Remove-Item -Recurse -Force ".venv" -ErrorAction Stop } catch { Write-Warning "Unable to fully remove '.venv' because one or more files are locked. Continuing." } }
-	if (Test-Path "venv") { try { Remove-Item -Recurse -Force "venv" -ErrorAction Stop } catch { Write-Warning "Unable to fully remove legacy 'venv' because one or more files are locked. Continuing." } }
-	Get-ChildItem -Path "./smarter/" -Recurse -Filter "__pycache__" -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+	rm -rf venv
+	find ./smarter/ -name __pycache__ -type d -exec rm -rf {} +
 
 # FIX NOTE: mcdaniel. the pip version pin temporarily resolves a pip-compile issue.
 #           AttributeError: 'PackageFinder' object has no attribute 'allow_all_prereleases'
@@ -240,13 +252,19 @@ python-requirements:
 # Keen
 # ---------------------------------------------------------
 keen-init:
-	Push-Location "keen_v3.0.6/tools"; npm install --global yarn; npm install gulp@^4.0.2; npm install gulp-cli; gulp --version; Pop-Location
+	cd keen_v3.0.6/tools && npm install --global yarn && \
+	npm install gulp@^4.0.2 && \
+	npm install gulp-cli && \
+	gulp --version
 
 keen-build:
-	Push-Location "keen_v3.0.6/tools"; yarn; gulp --demo1; Pop-Location
+	cd keen_v3.0.6/tools && \
+	yarn && \
+	gulp --demo1
 
 keen-server:
-	Push-Location "keen_v3.0.6/tools"; gulp localhost; Pop-Location
+	cd keen_v3.0.6/tools && \
+	gulp localhost
 
 
 # -------------------------------------------------------------------------
@@ -256,7 +274,8 @@ helm-update:
 	@echo "==============================================================================="
 	@echo "Updating Helm chart dependencies for smarter/charts/smarter ..."
 	@echo "==============================================================================="
-	Push-Location "helm/charts/smarter"; helm dependency update; Pop-Location
+	cd helm/charts/smarter && \
+	helm dependency update
 
 
 change-log:
@@ -268,7 +287,7 @@ change-log:
 # -------------------------------------------------------------------------
 # Sphinx Documentation
 #
-# automated ci-cd build target for Sphinx documentation
+# automated ci-cid build target for Sphinx documentation
 # python -m sphinx -T -b html -d _build/doctrees -D language=en . $READTHEDOCS_OUTPUT/html
 #
 # our local build target for Sphinx documentation is intended to try to match
@@ -281,7 +300,7 @@ sphinx-init:
 	@echo "Note: this is a simplified Python environment that skips setting up the full"
 	@echo "      development environment."
 	@echo "==============================================================================="
-	make check-python		# verify Python is installed
+	make check-python		# verify Python 3.13 is installed
 	make python-init		# create/replace Python virtual environment and install dependencies
 	make build			    # build the Smarter Docker container
 	make pre-commit-init	# install and configure pre-commit
@@ -292,10 +311,10 @@ sphinx-docs:
 	@echo "Building Sphinx documentation using local Python environment."
 	@echo "This may take a few minutes..."
 	@echo "==============================================================================="
-	Push-Location "docs"; make SPHINXOPTS="-W -T -D language=en" html; Pop-Location
+	cd docs && make SPHINXOPTS="-W -T -D language=en" html
 
 sphinx-linkcheck:
-	Push-Location "docs"; make linkcheck; Pop-Location
+	cd docs && make linkcheck
 
 ######################
 # HELP

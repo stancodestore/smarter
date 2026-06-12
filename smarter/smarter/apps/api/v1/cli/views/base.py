@@ -723,7 +723,7 @@ class CliBaseApiView(APIView, SmarterRequestMixin):
 
         self.smarter_request = request
         response = None
-        msg = f"{self.logger_prefix}.dispatch() - is {self.is_cli_base_api_view_ready_state} - {self.smarter_request} - {self.user_profile if self.user_profile else "Anonymous"}"
+        msg = f"{self.logger_prefix}.dispatch() - is {self.is_cli_base_api_view_ready_state} - {self.smarter_request} - {self.user_profile if self.user_profile else 'Anonymous'}"
         if self.ready:
             logger.debug(msg)
         else:

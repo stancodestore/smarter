@@ -2136,7 +2136,7 @@ class SmarterRequestMixin(AccountMixin):
             SmarterValidator.validate_session_key(session_key)
 
             verbose_logger.debug(
-                f"{self.request_mixin_logger_prefix}{formatted_text_green(".find_session_key() - initialized from url: ")}{session_key}",
+                f"{self.request_mixin_logger_prefix}{formatted_text_green('.find_session_key() - initialized from url: ')}{session_key}",
             )
             return session_key
 
@@ -2148,7 +2148,7 @@ class SmarterRequestMixin(AccountMixin):
                 session_key = session_key.rstrip("/")
                 SmarterValidator.validate_session_key(session_key)
                 verbose_logger.debug(
-                    f"{self.request_mixin_logger_prefix}{formatted_text_green(".find_session_key() - initialized from request body: ")}{session_key}",
+                    f"{self.request_mixin_logger_prefix}{formatted_text_green('.find_session_key() - initialized from request body: ')}{session_key}",
                 )
                 return session_key
 
@@ -2159,7 +2159,7 @@ class SmarterRequestMixin(AccountMixin):
             session_key = session_key.rstrip("/")
             SmarterValidator.validate_session_key(session_key)
             verbose_logger.debug(
-                f"{self.request_mixin_logger_prefix}{formatted_text_green(".find_session_key() - initialized from cookie data of the request object: ")}{session_key}",
+                f"{self.request_mixin_logger_prefix}{formatted_text_green('.find_session_key() - initialized from cookie data of the request object: ')}{session_key}",
             )
             return session_key
 
@@ -2170,7 +2170,7 @@ class SmarterRequestMixin(AccountMixin):
             session_key = session_key.rstrip("/")
             SmarterValidator.validate_session_key(session_key)
             verbose_logger.debug(
-                f"{self.request_mixin_logger_prefix}{formatted_text_green(".find_session_key() - initialized from the get() parameters of the request object: ")}{session_key}",
+                f"{self.request_mixin_logger_prefix}{formatted_text_green('.find_session_key() - initialized from the get() parameters of the request object: ')}{session_key}",
             )
             return session_key
 

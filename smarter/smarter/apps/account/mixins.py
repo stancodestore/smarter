@@ -413,7 +413,7 @@ class AccountMixin(SmarterHelperMixin):
             self._user_profile = UserProfile.get_cached_object(invalidate=False, user=self.user, account=account)  # type: ignore[arg-type]
             if not self._user_profile:
                 raise SmarterBusinessRuleViolation(
-                    f"User {self._user} is not associated with the account {self._account.account_number if isinstance(self._account, Account) else "unknown account"}."
+                    f"User {self._user} is not associated with the account {self._account.account_number if isinstance(self._account, Account) else 'unknown account'}."
                 )
 
             logger.debug(

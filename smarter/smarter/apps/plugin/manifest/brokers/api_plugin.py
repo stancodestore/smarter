@@ -820,7 +820,7 @@ class SAMApiPluginBroker(SAMPluginBaseBroker):
             return self.json_response_ok(command=command, data=self.to_json())
         try:
             raise SAMBrokerErrorNotReady(
-                f"{self.formatted_class_name} {self.plugin_meta.name if self.plugin_meta else self.kind or "ApiPlugin"} not ready",
+                f"{self.formatted_class_name} {self.plugin_meta.name if self.plugin_meta else self.kind or 'ApiPlugin'} not ready",
                 thing=self.kind,
                 command=command,
             )
