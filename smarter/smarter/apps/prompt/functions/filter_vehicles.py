@@ -85,8 +85,8 @@ from smarter.lib import json
 from smarter.lib.logging import WaffleSwitchedLoggerWrapper
 
 # local imports
-# from .models import FilterVehiclesRequestModel
-from .utils import should_log
+# from .function_weather.models import FilterVehiclesRequestModel
+from .function_weather.utils import should_log
 
 # ---------------------------------------------------------------------------
 # Module-level logger setup
@@ -100,18 +100,84 @@ logger_prefix = formatted_text(__name__ + ".filter_vehicles()")
 # (stand-in for a real database or REST API in this prototype)
 # ---------------------------------------------------------------------------
 VEHICLE_INVENTORY: list[dict[str, Any]] = [
-    {"make": "Toyota",    "model": "RAV4",       "year": 2025, "price": 34500, "body_type": "SUV"},
-    {"make": "Honda",     "model": "CR-V",        "year": 2025, "price": 37900, "body_type": "SUV"},
-    {"make": "Kia",       "model": "Telluride",   "year": 2025, "price": 44200, "body_type": "SUV"},
-    {"make": "Ford",      "model": "Escape",      "year": 2025, "price": 31000, "body_type": "SUV"},
-    {"make": "Subaru",    "model": "Forester",    "year": 2025, "price": 33500, "body_type": "SUV"},
-    {"make": "Mazda",     "model": "CX-5",        "year": 2025, "price": 36000, "body_type": "SUV"},
-    {"make": "Chevrolet", "model": "Equinox",     "year": 2025, "price": 32000, "body_type": "SUV"},
-    {"make": "Nissan",    "model": "Rogue",        "year": 2025, "price": 35000, "body_type": "SUV"},
-    {"make": "BMW",       "model": "X5",           "year": 2025, "price": 68000, "body_type": "SUV"},
-    {"make": "Ford",      "model": "Explorer",     "year": 2024, "price": 46000, "body_type": "SUV"},
-    {"make": "Toyota",    "model": "Camry",        "year": 2025, "price": 28000, "body_type": "Sedan"},
-    {"make": "Honda",     "model": "Accord",       "year": 2024, "price": 27000, "body_type": "Sedan"},
+    {
+        "make": "Toyota",
+        "model": "RAV4",
+        "year": 2025,
+        "price": 34500,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Honda",
+        "model": "CR-V",
+        "year": 2025,
+        "price": 37900,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Kia",
+        "model": "Telluride",
+        "year": 2025,
+        "price": 44200,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Ford",
+        "model": "Escape",
+        "year": 2025,
+        "price": 31000,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Subaru",
+        "model": "Forester",
+        "year": 2025,
+        "price": 33500,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Mazda",
+        "model": "CX-5",
+        "year": 2025,
+        "price": 36000,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Chevrolet",
+        "model": "Equinox",
+        "year": 2025,
+        "price": 32000,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Nissan",
+        "model": "Rogue",
+        "year": 2025,
+        "price": 35000,
+        "body_type": "SUV",
+    },
+    {"make": "BMW", "model": "X5", "year": 2025, "price": 68000, "body_type": "SUV"},
+    {
+        "make": "Ford",
+        "model": "Explorer",
+        "year": 2024,
+        "price": 46000,
+        "body_type": "SUV",
+    },
+    {
+        "make": "Toyota",
+        "model": "Camry",
+        "year": 2025,
+        "price": 28000,
+        "body_type": "Sedan",
+    },
+    {
+        "make": "Honda",
+        "model": "Accord",
+        "year": 2024,
+        "price": 27000,
+        "body_type": "Sedan",
+    },
 ]
 
 
@@ -136,7 +202,9 @@ class FilterVehiclesRequestModel(BaseModel):
     """
 
     budget: int = Field(..., gt=0, description="Maximum price in USD, e.g. 45000")
-    body_type: str = Field(..., min_length=1, description="Vehicle body style, e.g. 'SUV'")
+    body_type: str = Field(
+        ..., min_length=1, description="Vehicle body style, e.g. 'SUV'"
+    )
     year_min: Optional[int] = Field(
         default=None,
         ge=1900,
@@ -154,6 +222,7 @@ class FilterVehiclesRequestModel(BaseModel):
 # ---------------------------------------------------------------------------
 # 1. Factory function
 # ---------------------------------------------------------------------------
+
 
 def filter_vehicles_tool_factory() -> dict[str, Any]:
     """
@@ -232,6 +301,7 @@ def filter_vehicles_tool_factory() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 2. Implementation function
 # ---------------------------------------------------------------------------
+
 
 def filter_vehicles(tool_call: ChatCompletionMessageToolCall) -> list[dict[str, Any]]:
     """
@@ -313,7 +383,9 @@ def filter_vehicles(tool_call: ChatCompletionMessageToolCall) -> list[dict[str, 
     # 2.) Parse and validate input arguments from the tool call.
     # -------------------------------------------------------------------------
     if not tool_call or not tool_call.function or not tool_call.function.arguments:
-        return [{"error": "No arguments provided. Please supply a budget and body_type."}]
+        return [
+            {"error": "No arguments provided. Please supply a budget and body_type."}
+        ]
 
     try:
         raw_args = tool_call.function.arguments
@@ -323,11 +395,13 @@ def filter_vehicles(tool_call: ChatCompletionMessageToolCall) -> list[dict[str, 
         # Validate with the Pydantic model — raises ValidationError on bad input.
         request = FilterVehiclesRequestModel(**raw_args)
 
-        budget    = request.budget
-        body_type = request.body_type          # already title-cased by validator
-        year_min  = request.year_min if request.year_min is not None else year_min
+        budget = request.budget
+        body_type = request.body_type  # already title-cased by validator
+        year_min = request.year_min if request.year_min is not None else year_min
 
-        logger.debug(f"{logger_prefix} Parsed budget={budget}, body_type={body_type!r}, year_min={year_min}")
+        logger.debug(
+            f"{logger_prefix} Parsed budget={budget}, body_type={body_type!r}, year_min={year_min}"
+        )
 
     except Exception as e:
         return [{"error": f"Invalid arguments: {e}"}]
@@ -346,7 +420,8 @@ def filter_vehicles(tool_call: ChatCompletionMessageToolCall) -> list[dict[str, 
     # -------------------------------------------------------------------------
     try:
         filtered = [
-            vehicle for vehicle in VEHICLE_INVENTORY
+            vehicle
+            for vehicle in VEHICLE_INVENTORY
             if vehicle["body_type"].title() == body_type
             and vehicle["price"] <= budget
             and vehicle["year"] >= year_min

@@ -4,7 +4,7 @@
   },
   "cornflakes.linter.executablePath": "../venv/bin/flake8",
   "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter"
+    "editor.defaultFormatter": "charliermarsh.ruff"
   },
   "[dockerfile]": {
     "editor.defaultFormatter": "ms-azuretools.vscode-containers"
