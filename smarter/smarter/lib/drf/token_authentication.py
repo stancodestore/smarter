@@ -1,4 +1,4 @@
-"""knox TokenAuthentication subclass that checks if the token is active."""
+"""Knox TokenAuthentication subclass that checks if the token is active."""
 
 import logging
 
@@ -6,6 +6,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
 from knox.auth import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.request import Request
 
 from smarter.apps.account.models import User
 from smarter.common.exceptions import SmarterException
@@ -46,9 +47,7 @@ class SmarterTokenAuthenticationError(SmarterException):
 
 # pylint: disable=W0223
 class SmarterAnonymousUser(AnonymousUser):
-    """
-    AnonymousUser subclass for SmarterTokenAuthenticationMiddleware logging purposes.
-    """
+    """AnonymousUser subclass for SmarterTokenAuthenticationMiddleware logging purposes."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -56,7 +55,7 @@ class SmarterAnonymousUser(AnonymousUser):
 
 
 class SmarterTokenAuthentication(TokenAuthentication, SmarterHelperMixin):
-    """Enhanced Django Rest Framework (DRF) knox TokenAuthentication
+    """Enhanced Django Rest Framework (DRF) knox TokenAuthentication.
 
     This subclass adds:
 
@@ -75,7 +74,8 @@ class SmarterTokenAuthentication(TokenAuthentication, SmarterHelperMixin):
     @property
     def formatted_class_name(self) -> str:
         """Return the formatted class name for logging purposes."""
-        return formatted_text(f"{__name__}.{SmarterTokenAuthentication.__name__}")
+        class_name = f"{__name__}.{SmarterTokenAuthentication.__name__}"
+        return self.formatted_text(class_name)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -101,7 +101,15 @@ class SmarterTokenAuthentication(TokenAuthentication, SmarterHelperMixin):
         Returns:
             tuple[User, SmarterAuthToken]: A tuple containing the authenticated User and SmarterAuthToken.
         """
+        logger.debug(
+            "%s.authenticate_credentials() called with token: %s", self.formatted_class_name, mask_string(token)
+        )
         if not isinstance(token, bytes):
+            logger.warning(
+                "%s.authenticate_credentials() - invalid token type: %s. Expected bytes.",
+                self.formatted_class_name,
+                type(token),
+            )
             raise AuthenticationFailed("Invalid token type. Expected bytes")
         masked_token = mask_string(string=token.decode())
         smarter_token_authentication_request.send(sender=self.__class__, token=masked_token, url=None)
@@ -153,19 +161,21 @@ class SmarterTokenAuthentication(TokenAuthentication, SmarterHelperMixin):
         logger.info(
             "%s.authenticate_credentials() - successfully authenticated user %s", self.formatted_class_name, user
         )
+        logger.info("%s - is %s", self.formatted_class_name, self.formatted_state_ready)
         return (user, smarter_auth_token)
 
     @classmethod
-    def get_user_from_request(cls, request) -> User | SmarterAnonymousUser:
+    def get_user_from_request(cls, request: Request) -> User | SmarterAnonymousUser:
         """Override get_user_from_request() to add logging and to use SmarterAuthToken.
 
         Args:
-            request (HttpRequest): a Django request object.
+            request (Request): a Django request object.
 
         Returns:
             User or SmarterAnonymousUser: The authenticated user if the token is valid, otherwise SmarterAnonymousUser.
         """
         logger_prefix = formatted_text(f"{__name__}.{SmarterTokenAuthentication.__name__}.get_user_from_request()")
+        logger.debug("%s called with request: %s", logger_prefix, request)
 
         auth_header = request.META.get("HTTP_AUTHORIZATION")
         if not auth_header or not auth_header.startswith("Token "):

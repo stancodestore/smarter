@@ -1,12 +1,10 @@
-"""
-Views for provider-related pages in the Smarter Workbench web console.
-"""
+"""Views for provider-related pages in the Smarter Workbench web console."""
 
 import logging
 from typing import Optional, Sequence
 
 import yaml
-from django.core.handlers.wsgi import WSGIRequest
+from django.core.handlers.asgi import ASGIRequest
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 
@@ -32,7 +30,7 @@ from smarter.lib.logging import WaffleSwitchedLoggerWrapper
 # pylint: disable=W0613
 def should_log(level):
     """Check if logging should be done based on the waffle switch."""
-    return waffle.switch_is_active(SmarterWaffleSwitches.PLUGIN_LOGGING)
+    return waffle.switch_is_active(SmarterWaffleSwitches.PROVIDER_LOGGING)
 
 
 base_logger = logging.getLogger(__name__)
@@ -46,7 +44,7 @@ class ProviderDetailView(DocsBaseView):
     This view renders a detailed manifest for a specific plugin, including its configuration and metadata, in YAML format. It is intended for authenticated users and provides error handling for missing or unsupported plugin kinds and names.
 
     :param request: Django HTTP request object.
-    :type request: WSGIRequest
+    :type request: ASGIRequest
     :param args: Additional positional arguments.
     :type args: tuple
     :param kwargs: Keyword arguments, must include 'name' (plugin name) and 'kind' (plugin type).
@@ -67,15 +65,15 @@ class ProviderDetailView(DocsBaseView):
     **Example usage**::
 
         GET /plugin/detail/?name=my_plugin&kind=custom
-
     """
 
-    template_path = "provider/manifest_detail.html"
+    template_path = "common/manifest_detail.html"
     provider: Optional[Provider] = None
 
     def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
         """
         Handle GET requests to render the provider manifest detail view.
+
         This method processes the incoming request to retrieve the
         specified provider's manifest details and renders them in a
         user-friendly format. It performs validation on the provided provider
@@ -91,7 +89,7 @@ class ProviderDetailView(DocsBaseView):
         6. Handle any errors that occur during the process and return appropriate error responses.
 
         :param request: Django HTTP request object.
-        :type request: WSGIRequest
+        :type request: ASGIRequest
         :param args: Additional positional arguments.
         :type args: tuple
         :param kwargs: Keyword arguments, must include 'name' (provider name) and 'kind' (provider type).
@@ -176,7 +174,7 @@ class ProviderListView(SmarterAuthenticatedNeverCachedWebView):
     This view displays all providers available to the authenticated user as cards, providing a quick overview and access to provider details.
 
     :param request: Django HTTP request object.
-    :type request: WSGIRequest
+    :type request: ASGIRequest
     :param args: Additional positional arguments.
     :type args: tuple
     :param kwargs: Additional keyword arguments.
@@ -184,14 +182,26 @@ class ProviderListView(SmarterAuthenticatedNeverCachedWebView):
 
     :returns: Rendered HTML page with a card for each provider, or a 404 error page if the user is not authenticated.
     :rtype: HttpResponse
-
-
     """
 
     template_path = "provider/provider_list.html"
     providers: Sequence[Provider]
 
-    def get(self, request: WSGIRequest, *args, **kwargs):
+    @property
+    def formatted_class_name(self) -> str:
+        """Returns a formatted string of the class name for logging purposes."""
+        class_name = f"{__name__}.{ProviderListView.__name__}[{id(self)}]"
+        return self.formatted_text(class_name)
+
+    def get(self, request: ASGIRequest, *args, **kwargs):
+        """
+        Handle GET requests to render the provider list view.
+
+        This method retrieves all providers available to the authenticated user and renders them in a card-based layout
+        """
+
+        logger.debug("%s.get() called with args=%s, kwargs=%s", self.formatted_class_name, args, kwargs)
+
         self.smarter_request = request
         if not isinstance(request.user, User):
             logger.error(

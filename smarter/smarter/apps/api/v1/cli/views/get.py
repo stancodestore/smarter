@@ -1,15 +1,11 @@
 # pylint: disable=W0613
-"""Smarter API command-line interface 'get' view"""
-
-import logging
+"""Smarter API command-line interface 'get' view."""
 
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 
-from smarter.common.conf import smarter_settings
-from smarter.lib.django import waffle
+from smarter.lib import logging
 from smarter.lib.django.waffle import SmarterWaffleSwitches
-from smarter.lib.logging import WaffleSwitchedLoggerWrapper
 
 from .base import CliBaseApiView
 from .swagger import (
@@ -18,14 +14,7 @@ from .swagger import (
     EXAMPLE_GET_RESPONSE,
 )
 
-
-def should_log(level):
-    """Check if logging should be done based on the waffle switch."""
-    return waffle.switch_is_active(SmarterWaffleSwitches.API_LOGGING)
-
-
-base_logger = logging.getLogger(__name__)
-logger = WaffleSwitchedLoggerWrapper(base_logger, should_log)
+logger = logging.getSmarterLogger(__name__, any_switches=[SmarterWaffleSwitches.API_LOGGING])
 
 
 class ApiV1CliGetApiView(CliBaseApiView):
@@ -44,11 +33,13 @@ class ApiV1CliGetApiView(CliBaseApiView):
     @property
     def formatted_class_name(self) -> str:
         """
-        Returns the class name in a formatted string
+        Returns the class name in a formatted string.
+
         along with the name of this mixin.
         """
         inherited_class = super().formatted_class_name
-        return f"{inherited_class}.{ApiV1CliGetApiView.__name__}[{id(self)}]"
+        this_class = f".{ApiV1CliGetApiView.__name__}[{id(self)}]"
+        return f"{inherited_class}{self.formatted_text(this_class)}"
 
     @swagger_auto_schema(
         operation_description="""
@@ -75,5 +66,7 @@ This is a brokered operation, so the actual work is delegated to the appropriate
         logger.debug(
             "%s.post() called with request=%s, args=%s, kwargs=%s", self.formatted_class_name, request, args, kwargs
         )
+        if not self.broker:
+            raise ValueError(f"No broker found for kind '{kind}' in {self.formatted_class_name}")
         response = self.broker.get(request=request, kwargs=kwargs)
         return response

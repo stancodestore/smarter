@@ -13,37 +13,77 @@ from datetime import datetime
 
 HERE = os.path.abspath(os.path.dirname(__file__))
 SMARTER_ROOT = os.path.abspath(os.path.join(HERE, "../../smarter"))
+REPO_ROOT = os.path.abspath(os.path.join(SMARTER_ROOT, "../"))
 sys.path.insert(0, SMARTER_ROOT)
 
-###############################################################################
-# Smarter setup
-###############################################################################
+import django
+from dotenv import load_dotenv
+
 from smarter.__version__ import __version__  # noqa: F401
 from smarter.common.conf import smarter_settings
 from smarter.common.const import (
+    AUTHOR,
     SMARTER_ORGANIZATION_WEBSITE_URL,
     SMARTER_PRODUCT_NAME,
     SMARTER_PROJECT_WEBSITE_URL,
 )
+from smarter.common.exceptions import SmarterConfigurationError
 
+# Load environment variables from .env file. This is necessary for the
+# sphinx_contributors extension to access the GitHub token and fetch contributor information.
+env_path = os.path.join(REPO_ROOT, ".env")
+load_dotenv(env_path)
+
+###############################################################################
+# Smarter setup
+###############################################################################
 if not smarter_settings.environment:
-    raise RuntimeError("The 'smarter_settings.environment' variable is not set.")
+    # shouldn't ever happen, but just in case.
+    raise SmarterConfigurationError("The 'smarter_settings.environment' variable is not set.")
 
 ###############################################################################
 # Django setup
 ###############################################################################
 os.environ["DJANGO_SETTINGS_MODULE"] = "smarter.settings.local"
-
-import django
+contributors_github_token = os.environ.get("GITHUB_TOKEN")
 
 django.setup()
 
 
+###############################################################################
+# Patch the get_field_type function in sphinxcontrib_django to be more robust
+# and return "Unknown" instead of raising an exception when it encounters
+# an issue.
+###############################################################################
+from sphinxcontrib_django.docstrings import classes, field_utils
+
+
+def safe_get_field_type(field, include_role=True):
+    """A safe wrapper around the original get_field_type function that returns.
+
+    "Unknown" if any exception occurs.
+    """
+
+    try:
+        rel = getattr(field, "remote_field", None)
+        to = getattr(rel, "model", None) if rel else None
+        if to is None:
+            return "Unknown"
+        return field_utils.get_field_type(field, include_role=include_role)
+    # pylint: disable=broad-except
+    except Exception:
+        return "Unknown"
+
+
+# patch BOTH
+field_utils.get_field_type = safe_get_field_type
+classes.get_field_type = safe_get_field_type
+
 project = "Smarter Documentation"
 
 # pylint: disable=redefined-builtin
-copyright = f"{datetime.now().year}"
-author = "Lawrence P. McDaniel - https://lawrencemcdaniel.com"
+copyright = f"2023 - {datetime.now().year}"
+author = AUTHOR
 release = __version__
 
 try:
@@ -53,12 +93,12 @@ except Exception:
     commit = None
 
 
-last_updated = datetime.now().strftime("%Y-%m-%d")
+last_updated = datetime.now().strftime("%B-%Y")
 
 # custom context variables to be used in Sphinx templates, presumably in
 # the ./_templates/footer.html template override.
 html_context = {
-    "commit": commit,
+    # "commit": commit,
     "last_updated": last_updated,
     "branding_company_name": smarter_settings.branding_corporate_name,
     "branding_smarter_product_name": SMARTER_PRODUCT_NAME,
@@ -72,6 +112,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinxcontrib_django",
     "sphinx.ext.viewcode",
+    "sphinx_contributors",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
     "sphinx_design",
@@ -116,3 +157,7 @@ autodoc_mock_imports = [
     "django.template.loader",
     "django.utils",
 ]
+autodoc_type_aliases = {
+    "pydantic.types.JsonValue": "JsonValue",
+    "JsonValue": "JsonValue",
+}

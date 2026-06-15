@@ -9,7 +9,6 @@ import requests
 import yaml
 
 from smarter.common.api import SmarterApiVersions
-from smarter.common.helpers.console_helpers import formatted_text
 from smarter.common.mixins import SmarterHelperMixin
 from smarter.lib import json
 
@@ -56,8 +55,6 @@ class SAMLoaderError(SAMExceptionBase):
         - All manifest validation and parsing errors should use this class for consistency and traceability.
         - The `get_formatted_err_message` property provides a static, human-readable error label for logging and display.
 
-
-
     .. attention::
 
         - Catching this exception broadly may mask specific validation issues. Always inspect the error message for details.
@@ -65,14 +62,11 @@ class SAMLoaderError(SAMExceptionBase):
           use the appropriate exception class.
 
     :raises: This class is raised directly or via subclassing for any manifest loader error.
-
     """
 
     @property
     def get_formatted_err_message(self):
-        """
-        Return the static formatted error message for SAMLoader errors.
-        """
+        """Return the static formatted error message for SAMLoader errors."""
         return "Smarter API Manifest Loader Error"
 
 
@@ -246,7 +240,6 @@ class SAMLoader(SmarterHelperMixin):
 
     The loader uses Python's standard logging library to emit warnings and errors during
     the validation process, aiding in debugging and traceability.
-
     """
 
     _api_version: str = SmarterApiVersions.V1
@@ -413,7 +406,9 @@ class SAMLoader(SmarterHelperMixin):
 
     @property
     def name(self) -> str:
-        return self.manifest_metadata.get(SAMMetadataKeys.NAME.value, "unknown-name")
+        if self.manifest_metadata:
+            return self.manifest_metadata.get(SAMMetadataKeys.NAME.value, "unknown-name")
+        return "unknown-name"
 
     @property
     def source(self) -> str:
@@ -590,6 +585,18 @@ class SAMLoader(SmarterHelperMixin):
         if not self.data_format in [SAMDataFormats.JSON, SAMDataFormats.YAML]:
             raise SAMLoaderError("Invalid data format. Supported formats: json, yaml")
 
+        if not isinstance(self.json_data, dict):
+            raise SAMLoaderError(f"Invalid data format. Expected dict but got {type(self.json_data)}")
+
+        if not SAMKeys.APIVERSION.value in self.json_data:
+            raise SAMLoaderError(f"Missing required key: {SAMKeys.APIVERSION.value}")
+        if not SAMKeys.KIND.value in self.json_data:
+            raise SAMLoaderError(f"Missing required key: {SAMKeys.KIND.value}")
+        if not SAMKeys.METADATA.value in self.json_data:
+            raise SAMLoaderError(f"Missing required key: {SAMKeys.METADATA.value}")
+        if not SAMKeys.SPEC.value in self.json_data:
+            raise SAMLoaderError(f"Missing required key: {SAMKeys.SPEC.value}")
+
         # mcdaniel 2026-03-14: this has outlived its usefulness. Deprecating.
         # recursively validate the json representation of the manifest data
         # recursive_validator()
@@ -611,6 +618,7 @@ class SAMLoader(SmarterHelperMixin):
     def manifest_spec_keys(self) -> list[str]:
         """
         Returns a list of all spec keys defined in the SAMSpecKeys enumeration.
+
         This should be overridden by child classes to provide the specific spec keys
         relevant to their manifest type.
 
@@ -623,6 +631,7 @@ class SAMLoader(SmarterHelperMixin):
     def manifest_status_keys(self) -> list[str]:
         """
         Returns a list of all status keys defined in the SAMStatusKeys enumeration.
+
         This should be overridden by child classes to provide the specific status keys
         relevant to their manifest type.
 
@@ -710,9 +719,9 @@ class SAMLoader(SmarterHelperMixin):
 
         :return: The formatted class name as a string.
         :rtype: str
-
         """
-        return formatted_text(SAMLoader.__name__)
+        class_name = f"{__name__}.{SAMLoader.__name__}[{id(self)}]"
+        return self.formatted_text(class_name)
 
     def loader_ready_state(self) -> str:
         """

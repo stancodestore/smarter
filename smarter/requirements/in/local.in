@@ -10,6 +10,7 @@
 
 -r constraints.in
 -r base.in
+-r mariadb.in
 
 pip-tools
 
@@ -63,3 +64,9 @@ sphinxcontrib-django                # Sphinx for django settings
 sphinx-copybutton                   # Sphinx code copy button extension
 sphinx-autodoc-typehints            # Sphinx type hint annotation improvements
 sphinx-design                       # Adds drop downs and other fancy styling
+sphinx-contributors                 # lists the people who have contributed to this GitHub repo
+
+
+# Dockerfile requirements
+# ------------
+watchdog

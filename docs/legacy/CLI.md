@@ -35,15 +35,15 @@ The cli is designed to work with a manifest utf-8 text document, in yaml or json
 - [Account](../smarter/smarter/apps/account/api/v1/manifests/)
 - [ApiKey](../smarter/smarter/apps/account/api/v1/manifests/)
 - [Chat](../smarter/smarter/apps/chat/api/v1/manifests/)
-- [ChatHistory](../smarter/smarter/apps/chat/api/v1/manifests/)
-- [ChatPluginUsage](../smarter/smarter/apps/chat/api/v1/manifests/)
-- [ChatToolCall](../smarter/smarter/apps/chat/api/v1/manifests/)
+- [PromptHistory](../smarter/smarter/apps/chat/api/v1/manifests/)
+- [PromptPluginUsage](../smarter/smarter/apps/chat/api/v1/manifests/)
+- [PromptToolCall](../smarter/smarter/apps/chat/api/v1/manifests/)
 - [ChatBot](../smarter/smarter/apps/chatbot/api/v1/manifests/)
 - [Plugin](../smarter/smarter/apps/plugin/api/v1/manifests/)
 - [SqlConnection](../smarter/smarter/apps/plugin/api/v1/manifests/)
 - [ApiConnection](../smarter/smarter/apps/plugin/api/v1/manifests/)
 - [User](../smarter/smarter/apps/account/api/v1/manifests/)
-- [Secret](../smarter/smarter/apps/account/api/v1/manifests/)
+- [Secret](../smarter/smarter/apps/secret/api/v1/manifests/)
 
 ### Broker Model
 

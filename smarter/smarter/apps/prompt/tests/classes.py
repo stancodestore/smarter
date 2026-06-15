@@ -1,6 +1,4 @@
-"""
-Base class for creating units tests of chat providers.
-"""
+"""Base class for creating units tests of prompt providers."""
 
 import logging
 import os
@@ -15,33 +13,40 @@ from typing import Callable, Optional
 
 from django.db.utils import IntegrityError
 from django.test import Client
-from django.urls import reverse
 
 from smarter.apps.account.tests.mixins import TestAccountMixin
-from smarter.apps.chatbot.models import ChatBot, ChatBotPlugin
+from smarter.apps.llm_client.models import LLMClient, LLMClientPlugin
 from smarter.apps.plugin.manifest.controller import PluginController
 from smarter.apps.plugin.models import PluginDataValueError
 from smarter.apps.plugin.nlp import does_refer_to
 from smarter.apps.plugin.plugin.base import PluginBase
 from smarter.apps.plugin.signals import plugin_called, plugin_selected
-from smarter.apps.prompt.providers.const import OpenAIMessageKeys
-from smarter.common.conf import smarter_settings
-from smarter.common.utils import get_readonly_yaml_file
-from smarter.lib.django import waffle
-from smarter.lib.django.waffle import SmarterWaffleSwitches
-from smarter.lib.logging import WaffleSwitchedLoggerWrapper
-
-from ..models import Chat, ChatHistory, ChatPluginUsage, ChatToolCall
-from ..providers.providers import chat_providers
-from ..signals import (
+from smarter.apps.prompt.models import (
+    Prompt,
+    PromptHistory,
+    PromptPluginUsage,
+    PromptToolCall,
+)
+from smarter.apps.prompt.signals import (
     chat_completion_response,
     chat_finished,
     chat_response_failure,
     chat_started,
 )
+from smarter.apps.provider.services.text_completion.const import OpenAIMessageKeys
+from smarter.apps.provider.services.text_completion.providers import (
+    smarter_compatible_client,
+)
+from smarter.common.utils import get_readonly_yaml_file
+from smarter.lib.django import waffle
+from smarter.lib.django.shortcuts import reverse
+from smarter.lib.django.waffle import SmarterWaffleSwitches
+from smarter.lib.logging import WaffleSwitchedLoggerWrapper
+
 from ..tests.test_setup import get_test_file, get_test_file_path
 
 
+# pylint: disable=W0613
 def should_log(level):
     """Check if logging should be done based on the waffle switch."""
     return waffle.switch_is_active(SmarterWaffleSwitches.PROMPT_LOGGING)
@@ -66,9 +71,9 @@ class ProviderBaseClass(TestAccountMixin):
     handler: Optional[Callable]
     plugin: Optional[PluginBase]
     plugins: Optional[list[PluginBase]]
-    chatbot: Optional[ChatBot]
+    llm_client: Optional[LLMClient]
     client: Optional[Client]
-    chat: Optional[Chat]
+    prompt: Optional[Prompt]
 
     _plugin_called = False
     _plugin_selected = False
@@ -88,9 +93,9 @@ class ProviderBaseClass(TestAccountMixin):
         self.handler = None
         self.plugin = None
         self.plugins = None
-        self.chatbot = None
+        self.llm_client = None
         self.client = None
-        self.chat = None
+        self.prompt = None
 
         self._plugin_called = False
         self._plugin_selected = False
@@ -145,7 +150,7 @@ class ProviderBaseClass(TestAccountMixin):
         }
 
     def setUp(self):
-        """Internal test fixture setup, called from child class setUp()"""
+        """Internal test fixture setup, called from child class setUp()."""
         super().setUp()
         self.init()
 
@@ -158,8 +163,6 @@ class ProviderBaseClass(TestAccountMixin):
         if not self.plugin:
             plugin_controller = PluginController(
                 user_profile=self.user_profile,
-                account=self.account,
-                user=self.admin_user,
                 manifest=plugin_data,
             )
             if not plugin_controller or not plugin_controller.plugin:
@@ -171,18 +174,28 @@ class ProviderBaseClass(TestAccountMixin):
             self.plugins = [self.plugin]
         print(f"plugin: {self.plugin}")
 
-        # create a chatbot that uses the provider
+        # create an llm_client that uses the provider
         print(f"Setting up provider {self.provider}")
-        self.chatbot = self.chatbot_factory(provider=self.provider)
-        self.handler = chat_providers.get_handler(provider=self.provider)
-        print(f"provider {self.provider} is setup")
+        self.llm_client = self.llm_client_factory(provider=self.provider)  # type: ignore[assignment]
 
         self.client = Client()
         self.client.force_login(self.admin_user)  # type: ignore[call-arg]
 
-        self.chat = Chat.objects.create(
+        from django.test import RequestFactory
+        from rest_framework.request import Request
+
+        factory = RequestFactory()
+        wsgi_request = factory.get("/")
+        wsgi_request.user = self.admin_user
+        request = Request(wsgi_request)  # type: ignore
+        request.user = self.admin_user
+
+        self.handler = smarter_compatible_client.get_smarter_handler(request=request, provider_name=self.provider)
+        print(f"provider {self.provider} is setup")
+
+        self.prompt = Prompt.objects.create(
             session_key=secrets.token_hex(32),
-            chatbot=self.chatbot,
+            llm_client=self.llm_client,
             user_profile=self.user_profile,
             ip_address="192.1.1.1",
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
@@ -191,34 +204,34 @@ class ProviderBaseClass(TestAccountMixin):
 
     def tearDown(self):
         """Tear down test fixtures."""
-        if self.chat:
-            chat = self.chat  # to mitigate a race condition where the test
-            # may delete the chat before these models are deleted
-            # ChatHistory.objects.filter(chat=chat).delete()
-            # ChatToolCall.objects.filter(chat=chat).delete()
-            # ChatPluginUsage.objects.filter(chat=chat).delete()
-            ChatHistory.objects.filter(chat=chat).delete()
-            ChatToolCall.objects.filter(chat=chat).delete()
-            ChatPluginUsage.objects.filter(chat=chat).delete()
+        if self.prompt:
+            prompt = self.prompt  # to mitigate a race condition where the test
+            # may delete the prompt before these models are deleted
+            # PromptHistory.objects.filter(prompt=prompt).delete()
+            # PromptToolCall.objects.filter(prompt=prompt).delete()
+            # PromptPluginUsage.objects.filter(prompt=prompt).delete()
+            PromptHistory.objects.filter(prompt=prompt).delete()
+            PromptToolCall.objects.filter(prompt=prompt).delete()
+            PromptPluginUsage.objects.filter(prompt=prompt).delete()
 
             try:
-                chat.delete()
+                prompt.delete()
             except IntegrityError as e:
                 logger.debug("IntegrityError details: %s", e)
 
-        if self.chatbot:
-            self.chatbot.delete()
+        if self.llm_client:
+            self.llm_client.delete()
         if self.plugin:
             self.plugin.delete()
         self.plugins = None
         self.handler = None
         super().tearDown()
 
-    def chatbot_factory(self, provider: str = "openai"):
-        chatbot, _ = ChatBot.objects.get_or_create(
-            name="TestChatBot",
+    def llm_client_factory(self, provider: str = "openai"):
+        llm_client, _ = LLMClient.objects.get_or_create(
+            name="TestLLMClient",
             user_profile=self.user_profile,
-            description="Test ChatBot",
+            description="Test LLMClient",
             version="1.0.0",
             subdomain=None,
             custom_domain=None,
@@ -228,14 +241,14 @@ class ProviderBaseClass(TestAccountMixin):
             app_welcome_message="Welcome to Smarter!",
             provider=provider,
         )
-        ChatBotPlugin.objects.get_or_create(
-            chatbot=chatbot,
-            plugin_meta=self.plugin.plugin_meta,
+        LLMClientPlugin.objects.get_or_create(
+            llm_client=llm_client,
+            plugin_meta=self.plugin.plugin_meta,  # type: ignore[attr-defined]
         )
-        return chatbot
+        return llm_client
 
     def check_response(self, response):
-        """Check response structure from api.v1.views.chat handler()"""
+        """Check response structure from api.v1.views.prompt handler()."""
         if response["statusCode"] != 200:
             print(f"response: {response}")
 
@@ -281,7 +294,7 @@ class ProviderBaseClass(TestAccountMixin):
             return [
                 {
                     OpenAIMessageKeys.MESSAGE_ROLE_KEY: OpenAIMessageKeys.SYSTEM_MESSAGE_KEY,
-                    OpenAIMessageKeys.MESSAGE_CONTENT_KEY: "You are a helpful chatbot.",
+                    OpenAIMessageKeys.MESSAGE_CONTENT_KEY: "You are a helpful llm_client.",
                 },
                 {
                     OpenAIMessageKeys.MESSAGE_ROLE_KEY: OpenAIMessageKeys.USER_MESSAGE_KEY,
@@ -299,11 +312,11 @@ class ProviderBaseClass(TestAccountMixin):
 
         def false_assertion(content: str):
             messages = list_factory(content)
-            self.assertFalse(self.plugin.selected(self.admin_user, messages=messages))
+            self.assertFalse(self.plugin.selected(self.admin_user, messages=messages))  # type: ignore[attr-defined]
 
         def true_assertion(content: str):
             messages = list_factory(content)
-            self.assertTrue(self.plugin.selected(self.admin_user, messages=messages))
+            self.assertTrue(self.plugin.selected(self.admin_user, messages=messages))  # type: ignore[attr-defined]
 
         # false cases
         false_assertion("when was leisure suit larry released?")
@@ -320,7 +333,7 @@ class ProviderBaseClass(TestAccountMixin):
         true_assertion("everlasting gobstopper")
 
     def test_handler_gobstoppers(self):
-        """Test api.v1.views.chat handler() - Gobstoppers."""
+        """Test api.v1.views.prompt handler() - Gobstoppers."""
 
         # setup receivers for all signals to check if they are called
         plugin_selected.connect(self.plugin_selected_signal_handler)
@@ -335,12 +348,15 @@ class ProviderBaseClass(TestAccountMixin):
 
         try:
             if not self.handler:
-                raise ValueError("Handler is not set. Did you call chat_providers.get_handler(provider=...) ?")
+                raise ValueError(
+                    "Handler is not set. Did you call smarter_compatible_client.get_smarter_handler(provider=...) ?"
+                )
 
             response = self.handler(
-                chat=self.chat, data=event_about_gobstoppers, plugins=self.plugins, user=self.admin_user
+                prompt=self.prompt, data=event_about_gobstoppers, plugins=self.plugins, user=self.admin_user
             )
             sleep(1)
+        # pylint: disable=broad-except
         except Exception as error:
             self.fail(f"handler() raised {error}")
         self.check_response(response)
@@ -354,56 +370,62 @@ class ProviderBaseClass(TestAccountMixin):
                 print("assertFalse key:", key, "value:", value)
                 # self.assertFalse(value)
 
-        # assert that Chat has one or more records for self.admin_user
-        chat_histories = Chat.objects.filter().first()
+        # assert that Prompt has one or more records for self.admin_user
+        chat_histories = Prompt.objects.filter().first()
         self.assertIsNotNone(chat_histories)
 
-        # test url api endpoint for chat history
-        chat = ChatHistory.objects.order_by("-id").first()
-        url = reverse("prompt_workbench:api:v1:chathistory", kwargs={"pk": chat.id if chat else 1})
-        response = self.client.get(url)
+        # test url api endpoint for prompt history
+        prompt = PromptHistory.objects.order_by("-id").first()
+        url = reverse("prompt:api:v1:chathistory", kwargs={"pk": prompt.id if prompt else 1})  # type: ignore[union-attr]
+        response = self.client.get(url)  # type: ignore[union-attr]
 
         self.assertEqual(response.status_code, 200)
         print(f"{url} response:", response.json())
 
-        # give celery time to process the chat completion
+        # give celery time to process the prompt completion
         time.sleep(CELERY_WAIT)  # Pause execution for 1 second
 
-        # assert that ChatPluginUsage has one or more records for self.admin_user
-        plugin_selection_histories = ChatPluginUsage.objects.filter(chat=self.chat).first()
+        # assert that PromptPluginUsage has one or more records for self.admin_user
+        plugin_selection_histories = PromptPluginUsage.objects.filter(prompt=self.prompt).first()
         if not plugin_selection_histories:
-            print("ChatPluginUsage.objects.first() is None. llm did not call the plugin.")
+            print("PromptPluginUsage.objects.first() is None. llm did not call the plugin.")
         else:
             self.assertIsNotNone(plugin_selection_histories)
 
     def test_handler_weather(self):
-        """Test api.v1.views.chat handler() - weather."""
+        """Test api.v1.views.prompt handler() - weather."""
         response = None
         event_about_weather = get_test_file("json/prompt_about_weather.json")
 
         try:
             if not self.handler:
-                raise ValueError("Handler is not set. Did you call chat_providers.get_handler(provider=...) ?")
+                raise ValueError(
+                    "Handler is not set. Did you call smarter_compatible_client.get_smarter_handler(provider=...) ?"
+                )
 
             response = self.handler(
-                chat=self.chat, plugins=self.plugins, user=self.admin_user, data=event_about_weather
+                prompt=self.prompt, plugins=self.plugins, user=self.admin_user, data=event_about_weather
             )
+        # pylint: disable=broad-except
         except Exception as error:
             self.fail(f"handler() raised {error}")
         self.check_response(response)
 
     def test_handler_recipes(self):
-        """Test api.v1.views.chat handler() - recipes."""
+        """Test api.v1.views.prompt handler() - recipes."""
         response = None
         event_about_recipes = get_test_file("json/prompt_about_recipes.json")
 
         try:
             if not self.handler:
-                raise ValueError("Handler is not set. Did you call chat_providers.get_handler(provider=...) ?")
+                raise ValueError(
+                    "Handler is not set. Did you call smarter_compatible_client.get_smarter_handler(provider=...) ?"
+                )
 
             response = self.handler(
-                chat=self.chat, plugins=self.plugins, user=self.admin_user, data=event_about_recipes
+                prompt=self.prompt, plugins=self.plugins, user=self.admin_user, data=event_about_recipes
             )
+        # pylint: disable=broad-except
         except Exception as error:
             self.fail(f"handler() raised {error}")
         self.check_response(response)

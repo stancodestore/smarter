@@ -1,18 +1,17 @@
 # pylint: disable=W0613
 """
-Smarter API command-line interface 'apply' view
+Smarter API command-line interface 'apply' view.
+
 /api/v1/cli/apply/
 """
 
-import logging
 from http import HTTPStatus
 
-from django.core.handlers.wsgi import WSGIRequest
+from django.core.handlers.asgi import ASGIRequest
 from drf_yasg.utils import swagger_auto_schema
 
-from smarter.lib.django import waffle
+from smarter.lib import logging
 from smarter.lib.django.waffle import SmarterWaffleSwitches
-from smarter.lib.logging import WaffleSwitchedLoggerWrapper
 
 from .base import APIV1CLIViewError, CliBaseApiView
 from .swagger import (
@@ -21,16 +20,9 @@ from .swagger import (
     openai_success_response,
 )
 
-
-def should_log(level):
-    """Check if logging should be done based on the waffle switch."""
-    return waffle.switch_is_active(SmarterWaffleSwitches.API_LOGGING) or waffle.switch_is_active(
-        SmarterWaffleSwitches.MANIFEST_LOGGING
-    )
-
-
-base_logger = logging.getLogger(__name__)
-logger = WaffleSwitchedLoggerWrapper(base_logger, should_log)
+logger = logging.getSmarterLogger(
+    __name__, any_switches=[SmarterWaffleSwitches.API_LOGGING, SmarterWaffleSwitches.MANIFEST_LOGGING]
+)
 
 
 class APIV1CLIViewManifestNotFoundError(APIV1CLIViewError):
@@ -57,11 +49,13 @@ class ApiV1CliApplyApiView(CliBaseApiView):
     @property
     def formatted_class_name(self) -> str:
         """
-        Returns the class name in a formatted string
+        Returns the class name in a formatted string.
+
         along with the name of this mixin.
         """
         inherited_class = super().formatted_class_name
-        return f"{inherited_class}.{ApiV1CliApplyApiView.__name__}[{id(self)}]"
+        this_class = f".{ApiV1CliApplyApiView.__name__}[{id(self)}]"
+        return f"{inherited_class}{self.formatted_text(this_class)}"
 
     @swagger_auto_schema(
         operation_description="""
@@ -78,10 +72,8 @@ This is a brokered operation, so the actual work is delegated to the appropriate
         responses={**COMMON_SWAGGER_RESPONSES, HTTPStatus.OK: openai_success_response("Manifest applied successfully")},
         request_body=ManifestSerializer,
     )
-    def post(self, request: WSGIRequest, *args, **kwargs):
-        """
-        Handles POST requests to apply a Smarter manifest.
-        """
+    def post(self, request: ASGIRequest, *args, **kwargs):
+        """Handles POST requests to apply a Smarter manifest."""
 
         logger.debug(
             "%s.post() called with request=%s, args=%s, kwargs=%s", self.formatted_class_name, request, args, kwargs
@@ -93,11 +85,16 @@ This is a brokered operation, so the actual work is delegated to the appropriate
         user = kwargs.pop("user", None)
         account = kwargs.pop("account", None)
         user_profile = kwargs.pop("user_profile", None)
+        if not self.broker:
+            raise APIV1CLIViewError(f"No broker found for manifest kind '{self.manifest_kind}'.")
         response = self.broker.apply(
             request, user=user, account=account, user_profile=user_profile, args=args, kwargs=kwargs
         )
         if response and response.status_code == HTTPStatus.OK:
             logger.debug(
-                f"{self.formatted_class_name}.post(): Applied {self.manifest_kind} manifest for {self.manifest_name}"
+                "%s.post(): Applied %s manifest for %s",
+                self.formatted_class_name,
+                self.manifest_kind,
+                self.manifest_name,
             )
         return response
